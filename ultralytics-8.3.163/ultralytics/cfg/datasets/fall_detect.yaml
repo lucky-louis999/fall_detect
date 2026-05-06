@@ -1,0 +1,9 @@
+path: D:\deeplearning\ultralytics-8.3.163\datasets\fall_detect
+train: train/images
+val: valid/images
+test: test/images
+
+names:
+  0: fall
+  1: not fall
+
