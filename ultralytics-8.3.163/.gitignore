@@ -174,3 +174,10 @@ pnnx*
 
 # calibration image
 calibration_*.npy
+
+# --- 我自己加的：忽略测试视频和输出图片 ---
+*.mp4
+*.avi
+*.jpg
+*.jpeg
+*.png
