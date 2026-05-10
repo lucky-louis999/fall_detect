@@ -92,8 +92,9 @@ print(f"实际采集分辨率: {stream.actual_width} x {stream.actual_height} @ 
 
 
 def process_frame(frame, model):
-    # 强制使用显卡推理
-    results = model.track(frame, persist=True, classes=[0], imgsz=infer_size, verbose=False, device=compute_device)
+    # 核心优化1：增加 half=True 开启 FP16 半精度运算，提升 GPU 吞吐量，降低显存占用
+    use_fp16 = True if compute_device != 'cpu' else False
+    results = model.track(frame, persist=True, classes=[0], imgsz=infer_size, verbose=False, device=compute_device, half=use_fp16)
 
     # 增加安全检查：确保有检测结果，并且分配了 track ID
     if results and len(results) > 0 and results[0].boxes is not None and results[0].boxes.id is not None:
@@ -204,12 +205,25 @@ def process_frame(frame, model):
 
 
 frame_count = 0
+avg_fps = 0.0  # 用于平滑显示的帧率，防止数字剧烈跳动
 while True:
     # 改为从异步队列中读取最新帧
-    success, frame = stream.read()
+    success, raw_frame = stream.read()
     if not success:
         time.sleep(0.01)  # 队列为空时稍等一下
         continue
+
+    # 核心优化2：在送入推理前，提前将获取到的全自动超高分辨率原图(2560)按比例缩小
+    # 好处：
+    # 1. 极大降低了 YOLO 模型前处理阶段的 CPU 缩放开销
+    # 2. 减少了后面绘制几十个关键点和文本时的 CPU 遍历像素耗时！
+    # 3. 使用高效的 INTER_LINEAR 插值算法替代原来的 INTER_AREA
+    rh, rw = raw_frame.shape[:2]
+    scale = min(preview_width / rw, preview_height / rh)
+    if scale < 1.0:
+        frame = cv2.resize(raw_frame, (int(rw * scale), int(rh * scale)), interpolation=cv2.INTER_LINEAR)
+    else:
+        frame = raw_frame
 
     frame_count += 1
     start_time = time.perf_counter()
@@ -218,20 +232,15 @@ while True:
 
     process_time = time.perf_counter() - start_time
     current_fps = 1 / process_time if process_time > 0 else 0
+    avg_fps = current_fps if avg_fps == 0 else avg_fps * 0.8 + current_fps * 0.2
 
-    print(f"\r[运行中] 帧: {frame_count} | 耗时: {process_time:.4f}s | FPS: {current_fps:.1f}", end="")
+    print(f"\r[运行中] 帧: {frame_count} | 耗时: {process_time:.4f}s | FPS: {avg_fps:.1f}", end="")
 
-    info_text = f"FPS: {current_fps:.1f} | Cam: {stream.actual_width}x{stream.actual_height} | Infer: {infer_size}"
+    info_text = f"FPS: {avg_fps:.1f} | Cam: {stream.actual_width}x{stream.actual_height} | Infer: {infer_size}"
     cv2.putText(out_frame, info_text, (40, 80), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 255, 255), 4)
 
-    h, w = out_frame.shape[:2]
-    scale = min(preview_width / w, preview_height / h)
-    if scale < 1.0:
-        preview_frame = cv2.resize(out_frame, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
-    else:
-        preview_frame = out_frame
-
-    cv2.imshow("Webcam Fall Detection", preview_frame)
+    # 取消原有的末尾性能杀手——极其昂贵的高清后处理双重 Resize
+    cv2.imshow("Webcam Fall Detection", out_frame)
 
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
