@@ -8,7 +8,7 @@ from ultralytics import YOLO
 
 # ================= 显卡检测与强制开启 =================
 if torch.cuda.is_available():
-    compute_device = 0
+    compute_device = 1
     print(f"✅ 成功检测到显卡: {torch.cuda.get_device_name(0)}")
 else:
     compute_device = 'cpu'
@@ -16,7 +16,7 @@ else:
 # ======================================================
 
 # ================= 配置区 =================
-camera_id = 0
+camera_id = 1
 desired_width = 2560
 desired_height = 1440
 infer_size = 640

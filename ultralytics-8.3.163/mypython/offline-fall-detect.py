@@ -16,7 +16,7 @@ else:
     print("❌ 警告：未检测到可用的 GPU，使用 CPU 运行...")
 
 # ================= 🚀 核心测试配置区 =================
-INPUT_PATH = "D:/google下载/摔倒参考 _ 50种摔倒方式.mp4"  # 【修改这里】填写你想测试的视频文件 (.mp4, .avi) 或图片文件 (.jpg, .png) 的绝对或相对路径
+INPUT_PATH = "D:\google下载\摔倒参考 _ 50种摔倒方式.mp4"  # 【修改这里】填写你想测试的视频文件 (.mp4, .avi) 或图片文件 (.jpg, .png) 的绝对或相对路径
 SAVE_RESULT = False            # 【修改这里】是否保存处理后的结果：True 为保存，False 为仅预览不保存
 OUTPUT_DIR = "output_results"  # 保存结果的文件夹名称
 
@@ -136,8 +136,9 @@ def process_frame(frame, model, is_video=True):
                     else:
                         sk_aspect = sk_w / sk_h if sk_h > 0 else 1
                         if sk_aspect > 1.2 and spine_length < shoulder_width * 2.0:
-                            if not is_video or head_drop_velocity > DROP_VELOCITY_THRESHOLD or history['is_confirmed_fall']:
-                                is_abnormal_posture = True
+                             if abs(spine_dx) > abs(spine_dy) * 0.5:
+                                if head_drop_velocity > DROP_VELOCITY_THRESHOLD or history['is_confirmed_fall']:
+                                    is_abnormal_posture = True
                                 
                         # 👑 新增：规则 4 垂直滑倒/瘫倒防漏判 (上下半身折叠 + 坠落速度)
                         # 特征：身体没有横过来，头也没倒挂，但是“屁股坐地上了”，导致整体高度被严重压缩
