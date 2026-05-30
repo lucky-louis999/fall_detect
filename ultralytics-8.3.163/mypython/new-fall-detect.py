@@ -26,8 +26,9 @@ preview_width = 1280
 preview_height = 720
 
 # ----------------- 🎯 时序状态机与阈值配置 (痛点解决方案) -----------------
-FALL_FRAMES_THRESHOLD = 8      # 异常姿态需要连续存在多少帧，才正式报警 (防瞬间弯腰误报)
-DROP_VELOCITY_THRESHOLD = 5.0  # 头部瞬间下坠速度 (像素/帧)。达到此速度说明是突发性下落
+FALL_FRAMES_THRESHOLD = 4      # 【改小】从 8 降为 4，减少常规响应时间
+DROP_VELOCITY_THRESHOLD = 3.0  # 【改小】对下落的感知更敏锐
+SEVERE_DROP_VELOCITY = 10.0    # 【新增】猛烈下坠速度，用于触发“秒判”
 
 # 全局字典缓存，用于根据 track_id 维护每个人的时序历史特征
 # 结构: track_history[track_id] = {'head_y_list': [], 'fall_status_count': 0, 'is_confirmed_fall': False}
@@ -84,9 +85,12 @@ class VideoCaptureAsync:
         self.stopped = True
         self.cap.release()
 
-#加载模型
+import os
+
+# 加载模型：使用绝对路径以确保能够找到 ultralytics-8.3.163 根目录下的模型文件
 print("正在加载 YOLO 模型...")
-model = YOLO("yolo11n-pose.pt")
+model_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "yolo11n-pose.pt")
+model = YOLO(model_path)
 
 print("正在初始化异步摄像头流...")
 stream = VideoCaptureAsync(camera_id, desired_width, desired_height).start()
@@ -213,17 +217,33 @@ def process_frame(frame, model):
                         if head_drop_velocity > DROP_VELOCITY_THRESHOLD or history['is_confirmed_fall']:
                             is_abnormal_posture = True
 
-                    # 规则 3：透视缩短类跌倒 (垂直朝镜头扑) (痛点2)
+                    # 规则 3：极度透视缩短
                     else:
                         sk_aspect = sk_w / sk_h if sk_h > 0 else 1
                         # 骨架长宽比例失调(挤成一个饼)，且脊椎短缩
                         if sk_aspect > 1.2 and spine_length < shoulder_width * 2.0:
                             if head_drop_velocity > DROP_VELOCITY_THRESHOLD or history['is_confirmed_fall']:
                                 is_abnormal_posture = True
+                                
+                        # 👑 新增：规则 4 垂直滑倒/瘫倒防漏判 (上下半身折叠 + 坠落速度)
+                        # 特征：身体没有横过来，头也没倒挂，但是“屁股坐地上了”，导致整体高度被严重压缩
+                        elif head_drop_velocity > DROP_VELOCITY_THRESHOLD or history['is_confirmed_fall']:
+                            # 取全身上下极端视点（有脚踝找脚踝，没脚踝找骨架底端）
+                            bottom_y = ankle_c_y if ankle_visible else sk_y2
+                            total_height = bottom_y - head_y
+                            
+                            # 正常人直立时，整体身高大约是肩宽的 3.5 到 4.5 倍
+                            # 滑倒跌坐在地时，双膝或者双腿折叠，总高度通常会被压扁到肩宽的 2.7 倍以内
+                            if total_height > 0 and total_height < shoulder_width * 2.7:
+                                is_abnormal_posture = True
 
                 # ------ 状态机衰减机制 (解决偶尔帧抖动与持续性问题) ------
                 if is_abnormal_posture:
-                    history['fall_status_count'] += 1
+                    # 【核心改进代码】：如果伴随巨大的下落速度，视作“极其危险”，一步加快报警进度
+                    if head_drop_velocity > SEVERE_DROP_VELOCITY:
+                        history['fall_status_count'] += 2
+                    else:
+                        history['fall_status_count'] += 1
                 else:
                     # 姿态正常了，将累积危险值逐渐扣减至0，允许重新判定
                     history['fall_status_count'] = max(0, history['fall_status_count'] - 1)

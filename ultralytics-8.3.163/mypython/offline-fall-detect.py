@@ -25,8 +25,9 @@ preview_width = 1280
 preview_height = 720
 
 # ----------------- 🎯 时序状态机与阈值配置 -----------------
-FALL_FRAMES_THRESHOLD = 8      # 异常姿态需要连续存在多少帧，才正式报警 (防瞬间弯腰误报)
-DROP_VELOCITY_THRESHOLD = 5.0  # 头部瞬间下坠速度 (像素/帧)
+FALL_FRAMES_THRESHOLD = 4      # 【改小】从 8 降为 4，减少常规响应时间
+DROP_VELOCITY_THRESHOLD = 3.0  # 【改小】对下落的感知更敏锐
+SEVERE_DROP_VELOCITY = 10.0    # 【新增】猛烈下坠速度，用于触发“秒判”
 
 track_history = {}
 
@@ -137,6 +138,18 @@ def process_frame(frame, model, is_video=True):
                         if sk_aspect > 1.2 and spine_length < shoulder_width * 2.0:
                             if not is_video or head_drop_velocity > DROP_VELOCITY_THRESHOLD or history['is_confirmed_fall']:
                                 is_abnormal_posture = True
+                                
+                        # 👑 新增：规则 4 垂直滑倒/瘫倒防漏判 (上下半身折叠 + 坠落速度)
+                        # 特征：身体没有横过来，头也没倒挂，但是“屁股坐地上了”，导致整体高度被严重压缩
+                        elif not is_video or head_drop_velocity > DROP_VELOCITY_THRESHOLD or history['is_confirmed_fall']:
+                            # 取全身上下极端视点（有脚踝找脚踝，没脚踝找骨架底端）
+                            bottom_y = ankle_c_y if ankle_visible else sk_y2
+                            total_height = bottom_y - head_y
+                            
+                            # 正常人直立时，整体身高大约是肩宽的 3.5 到 4.5 倍
+                            # 滑倒跌坐在地时，双膝或者双腿折叠，总高度通常会被压扁到肩宽的 2.7 倍以内
+                            if total_height > 0 and total_height < shoulder_width * 2.7:
+                                is_abnormal_posture = True
 
                 # 若是单张图片测试，抛弃状态机延迟，只要姿态异常即刻报警
                 if not is_video:
@@ -144,7 +157,11 @@ def process_frame(frame, model, is_video=True):
                         history['is_confirmed_fall'] = True
                 else: # 视频状态机
                     if is_abnormal_posture:
-                        history['fall_status_count'] += 1
+                        # 【核心改进代码】：如果伴随巨大的下落速度，视作“极其危险”，一步加快报警进度
+                        if head_drop_velocity > SEVERE_DROP_VELOCITY:
+                            history['fall_status_count'] += 2
+                        else:
+                            history['fall_status_count'] += 1
                     else:
                         history['fall_status_count'] = max(0, history['fall_status_count'] - 1)
                         if history['fall_status_count'] == 0:
