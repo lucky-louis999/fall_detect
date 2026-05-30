@@ -371,10 +371,7 @@ def process_frame(frame, model):
                                 if knee_angle < 100:  # 侧身：膝盖深弯 → 主动下蹲
                                     is_squatting = True
                                     break
-                    # 正面蹲下补充判断：胯部贴近脚踝（地面）→ 蹲坐状态
-                    if not is_squatting and ankle_visible:
-                        if (hip_c_y - ankle_c_y) < shoulder_width * 0.6:
-                            is_squatting = True
+                   
 
                 if hip_visible and not is_squatting:
                     # 规则 1：横向卧倒
