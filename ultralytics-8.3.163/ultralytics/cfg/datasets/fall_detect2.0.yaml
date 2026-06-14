@@ -1,0 +1,12 @@
+train: D:\deeplearning\ultralytics-8.3.163\datasets\fall_detect2.0\images\train
+val: D:\deeplearning\ultralytics-8.3.163\datasets\fall_detect2.0\images\val
+
+nc: 2
+names: ['fall', 'not fall']
+
+roboflow:
+  workspace: workshop-7z235
+  project: fall-detection-lbyju
+  version: 4
+  license: CC BY 4.0
+  url: https://universe.roboflow.com/workshop-7z235/fall-detection-lbyju/dataset/4

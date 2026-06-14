@@ -1,0 +1,8 @@
+train: D:\deeplearning\ultralytics-8.3.163\datasets\taobao\train\images  # 训练集图像路径
+val:   D:\deeplearning\ultralytics-8.3.163\datasets\taobao\valid\images # 验证集图像路径
+test:  D:\deeplearning\ultralytics-8.3.163\datasets\taobao\test\images
+nc: 2  
+
+names:
+  - fall   # ID: 0
+  - normal # ID: 1
